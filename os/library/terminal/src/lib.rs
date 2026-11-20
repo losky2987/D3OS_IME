@@ -1,0 +1,38 @@
+#![no_std]
+extern crate alloc;
+
+pub mod read;
+pub mod session;
+pub mod write;
+
+pub use session::{CtlRecord, Session, WaitState};
+pub use pc_keyboard::{DecodedKey, KeyCode};
+
+use num_enum::{FromPrimitive, IntoPrimitive};
+
+#[derive(Debug, PartialEq, IntoPrimitive, FromPrimitive)]
+#[repr(usize)]
+pub enum TerminalInputState {
+    #[num_enum(default)]
+    Idle = 0,
+    Canonical = 1,
+    Fluid = 2,
+    Raw = 3,
+}
+
+#[derive(Debug, PartialEq, IntoPrimitive, FromPrimitive, Clone, Copy)]
+#[repr(usize)]
+pub enum TerminalMode {
+    #[num_enum(default)]
+    Canonical = 0,
+    Fluid = 1,
+    Raw = 2,
+}
+
+#[derive(Debug, PartialEq, IntoPrimitive, FromPrimitive, Clone, Copy)]
+#[repr(u8)]
+pub enum DecodedKeyType {
+    #[num_enum(default)]
+    Unicode = 0,
+    RawKey = 1,
+}

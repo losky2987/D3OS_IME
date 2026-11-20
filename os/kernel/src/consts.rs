@@ -1,0 +1,25 @@
+// All user space related code and structures lie above USER_SPACE_START
+pub const USER_SPACE_START: usize = 0x10000000000;  // 1 TiB
+
+// Code lies at the beginning of the user space (Max size: 1 GiB)
+pub const USER_SPACE_CODE_START: usize = USER_SPACE_START;
+
+// User space bootstrap data (Max size: 1 GiB)
+pub const USER_SPACE_BOOTSTRAP_START: usize = USER_SPACE_CODE_START + 0x40000000;  // 1 GiB
+pub const USER_SPACE_ARG_START: usize = USER_SPACE_BOOTSTRAP_START;
+
+// User space mailbox
+pub const USER_MAILBOX_SIZE: usize = 0x40000000;  // 1 GiB
+pub const USER_SPACE_MAILBOX_START: usize = 0x10100000000;
+
+// User space stacks (Max size per stack: 1 GiB)
+pub const MAX_USER_STACK_SIZE: usize = 0x40000000;  // 1 GiB
+pub const MAIN_USER_STACK_START: usize = USER_SPACE_BOOTSTRAP_START + 0x40000000;  // 1 GiB
+pub const KERNEL_STACK_PAGES: usize = 64;
+pub const STACK_ENTRY_SIZE: usize = 8;  
+
+// number of heap pages for the kernel heap (16 MiB)
+// should be a power of two because of the frame allocator
+pub const KERNEL_HEAP_PAGES: usize = 0x1000; 
+
+pub const MAX_SHM_SIZE: usize = 0x100000;  // 1 MiB

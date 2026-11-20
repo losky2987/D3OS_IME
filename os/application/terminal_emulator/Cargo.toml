@@ -1,0 +1,37 @@
+[package]
+edition = "2024"
+name = "terminal_emulator"
+version = "0.1.0"
+authors = ["Aymen Sellami <aymen.sellami@hhu.de>", "Sebastian Keller <sebastian.keller@hhu.de>", "Fabian Ruhland <ruhland@hhu.de>", "Niklas Sombert <niklas.sombert@uni-duesseldorf.de>", "Michael Schöttner <michael.schoettner@hhu.de>",]
+
+[lib]
+crate-type = ["staticlib"]
+path = "src/terminal_emulator.rs"
+test = false
+doctest = false
+bench = false
+
+[dependencies]
+# Local dependencies
+runtime = { path = "../../library/runtime" }
+graphic = { path = "../../library/graphic" }
+stream = { path = "../../library/stream" }
+concurrent = { path = "../../library/concurrent" }
+drawer = { path = "../../library/drawer" }
+time = { path = "../../library/time" }
+system_info = { path = "../../library/system_info" }
+input = { path = "../../library/input" }
+syscall = {path ="../../library/syscall"}
+terminal = {path ="../../library/terminal", features=["manager"]}
+logger = {path ="../../library/logger"}
+naming = {path ="../../library/naming"}
+globals = {path ="../../library/globals"}
+
+# Extern dependencies
+anstyle-parse = "0.2.6"
+unifont = "1.1.0"
+chrono = { version = "0.4.42", default-features = false, features = ["alloc"] }
+pc-keyboard = "0.9"
+spin = "0.12"
+log = "0.4.26"
+num_enum = { version = "0.7", default-features = false }
