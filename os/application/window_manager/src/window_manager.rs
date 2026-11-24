@@ -26,7 +26,6 @@ use drawer::rect_data::RectData;
 use drawer::vertex::Vertex;
 use globals::hotkeys::HKEY_TOGGLE_TERMINAL_WINDOW;
 use graphic::lfb::DEFAULT_CHAR_HEIGHT;
-use keyboard_decoder::KeyboardDecoder;
 use nolock::queues::mpsc::jiffy;
 
 use input::mouse::try_read_mouse;
@@ -45,7 +44,6 @@ pub mod api;
 mod apps;
 mod components;
 mod config;
-mod keyboard_decoder;
 mod mouse_state;
 mod signal;
 mod utils;
@@ -86,7 +84,6 @@ struct WindowManager {
     frames: i64,
 
     mouse_state: MouseState,
-    keyboard_decoder: KeyboardDecoder,
 }
 
 impl WindowManager {
@@ -161,7 +158,6 @@ impl WindowManager {
                 start_time: time,
                 frames: 0,
                 mouse_state: MouseState::new(),
-                keyboard_decoder: KeyboardDecoder::new(),
             },
             senders,
         )
@@ -262,7 +258,7 @@ impl WindowManager {
     }
 
     fn process_keyboard_input(&mut self) {
-        let read_option = self.keyboard_decoder.read_decoded();
+        let read_option = ime::read_key(false).ok().flatten();
 
         if let Some(keyboard_press) = read_option {
             // `enter_app_mode` overrides all other keyboard-interactions

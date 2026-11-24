@@ -53,7 +53,7 @@ impl TerminalEmulator {
         let mux = Rc::new(RefCell::new(SessionMux::new(terminal.clone())));
         Self {
             terminal: terminal.clone(),
-            input_observer: InputObserver::new(terminal.clone(), event_handler.clone(), mux.clone()),
+            input_observer: InputObserver::new(event_handler.clone(), mux.clone()),
             cursor: Cursor::new(terminal.clone()),
             event_handler,
             mux,

@@ -20,10 +20,7 @@
 use alloc::{format, string::ToString};
 use concurrent::{process, thread};
 use graphic::{color, lfb};
-use input::keyboard;
-use pc_keyboard::KeyEvent;
 use spin::Mutex;
-use stream::RawInputStream;
 use time::{date, systime};
 
 use crate::util::system_info::system_info;
@@ -45,16 +42,6 @@ pub struct LFBTerminal {
 
 unsafe impl Send for LFBTerminal {}
 unsafe impl Sync for LFBTerminal {}
-
-impl RawInputStream for LFBTerminal {
-    fn read_event(&self) -> KeyEvent {
-        keyboard::read_raw(true).unwrap()
-    }
-
-    fn read_event_nb(&self) -> Option<KeyEvent> {
-        keyboard::read_raw(false)
-    }
-}
 
 impl LFBTerminal {
     pub fn new(buffer: *mut u8, pitch: u32, width: u32, height: u32, bpp: u8) -> Self {

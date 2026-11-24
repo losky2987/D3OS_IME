@@ -1,0 +1,20 @@
+[package]
+edition = "2024"
+name = "imed"
+version = "0.1.0"
+authors = ["Xiaochen Xing (xixin100@hhu.de)"]
+autobins = false
+
+[lib]
+crate-type = ["staticlib"]
+path = "src/main.rs"
+test = false
+doctest = false
+bench = false
+
+[dependencies]
+pc-keyboard = "0.9"
+# Local dependencies
+runtime = { path = "../../library/runtime" }
+terminal = { path = "../../library/terminal" }
+ime = { path = "../../library/ime" }

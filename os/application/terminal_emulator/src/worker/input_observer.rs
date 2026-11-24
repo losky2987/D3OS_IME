@@ -1,28 +1,22 @@
 use core::cell::RefCell;
 
-use alloc::{rc::Rc, vec::Vec};
-use globals::hotkeys::{
-    HKEY_CLOSE_TAB, HKEY_NEW_TAB, HKEY_NEXT_TAB, HKEY_PREV_TAB, HKEY_TOGGLE_TERMINAL_WINDOW,
-};
-use pc_keyboard::layouts::{AnyLayout, De105Key};
-use pc_keyboard::{DecodedKey, EventDecoder, HandleControl, KeyCode, KeyEvent};
-use stream::{event_to_u16, RawInputStream};
+use alloc::rc::Rc;
+use globals::hotkeys::{HKEY_CLOSE_TAB, HKEY_NEW_TAB, HKEY_NEXT_TAB, HKEY_PREV_TAB, HKEY_TOGGLE_TERMINAL_WINDOW};
+use ime::{DecodedKey, KeyCode, KeyEvent, KeyboardInput};
+use stream::event_to_u16;
+use terminal_lib::TerminalMode;
 use terminal_lib::session::{CtlRecord, WaitState};
-use terminal_lib::{DecodedKeyType, TerminalMode};
 
 use crate::{
     event_handler::{Event, EventHandler},
     sessions::SessionMux,
-    terminal::lfb_terminal::LFBTerminal,
     worker::canonical::CanonicalAction,
 };
 
 use super::worker::Worker;
 
 pub struct InputObserver {
-    terminal: Rc<LFBTerminal>,
     event_handler: Rc<RefCell<EventHandler>>,
-    decoder: EventDecoder<AnyLayout>,
     mode: TerminalMode,
     /// Shared session multiplexer: owns per-session endpoints, canonical
     /// editors, and routes input to the active session's foreground app.
@@ -30,15 +24,9 @@ pub struct InputObserver {
 }
 
 impl InputObserver {
-    pub fn new(
-        terminal: Rc<LFBTerminal>,
-        event_handler: Rc<RefCell<EventHandler>>,
-        mux: Rc<RefCell<SessionMux>>,
-    ) -> Self {
+    pub fn new(event_handler: Rc<RefCell<EventHandler>>, mux: Rc<RefCell<SessionMux>>) -> Self {
         Self {
-            terminal,
             event_handler,
-            decoder: EventDecoder::new(AnyLayout::De105Key(De105Key), HandleControl::Ignore),
             mode: TerminalMode::Raw,
             mux,
         }
@@ -63,7 +51,7 @@ impl Worker for InputObserver {
     fn run(&mut self) {
         self.mux.borrow_mut().ensure_active_in_writer();
 
-        let Some(key_event) = self.terminal.read_event_nb() else {
+        let Ok(Some(KeyboardInput { raw: key_event, decoded })) = ime::read_event(false) else {
             return;
         };
 
@@ -76,13 +64,11 @@ impl Worker for InputObserver {
         }
 
         // Process key event into decoded key (unicode char or raw keycode)
-        let Some(decoded_key) = self.decoder.process_keyevent(key_event.clone()) else {
+        let Some(decoded_key) = decoded else {
             // This returns none if the key event was a key release
             // In this case, we only process the byte if the terminal is in raw mode
             if use_pipe && self.mode == TerminalMode::Raw {
-                if let Some(buffer) = self.buffer_raw(key_event) {
-                    self.deliver(&buffer);
-                }
+                self.deliver_raw(key_event);
             }
 
             return;
@@ -102,14 +88,10 @@ impl Worker for InputObserver {
                 }
             }
             Some(TerminalMode::Fluid) => {
-                if let Some(buffer) = self.buffer_fluid(decoded_key) {
-                    self.deliver(&buffer);
-                }
+                self.deliver(&ime::wire::encode_key(decoded_key).to_ne_bytes());
             }
             Some(TerminalMode::Raw) => {
-                if let Some(buffer) = self.buffer_raw(key_event) {
-                    self.deliver(&buffer);
-                }
+                self.deliver_raw(key_event);
             }
             None => {}
         }
@@ -118,7 +100,7 @@ impl Worker for InputObserver {
 
 impl InputObserver {
     /// Check if the pressed key corresponds to a command.
-    /// 
+    ///
     /// If this is the case, queue it. Else, this is just input for the applications.
     fn try_intercept_reserved_key(&self, key: DecodedKey) -> Option<DecodedKey> {
         self.event_handler.borrow_mut().trigger(match key {
@@ -133,16 +115,8 @@ impl InputObserver {
         None
     }
 
-    fn buffer_raw(&self, event: KeyEvent) -> Option<Vec<u8>> {
-        let raw = event_to_u16(event);
-        Some(raw.to_ne_bytes().to_vec())
-    }
-
-    fn buffer_fluid(&self, key: DecodedKey) -> Option<Vec<u8>> {
-        match key {
-            DecodedKey::Unicode(key) => Some([DecodedKeyType::Unicode as u8, key as u8].to_vec()),
-            DecodedKey::RawKey(key) => Some([DecodedKeyType::RawKey as u8, key as u8].to_vec()),
-        }
+    fn deliver_raw(&mut self, event: KeyEvent) {
+        self.deliver(&u32::from(event_to_u16(event)).to_ne_bytes());
     }
 
     /// Map a decoded key to a canonical-mode edit action, or `None` when the key
