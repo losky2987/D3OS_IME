@@ -68,7 +68,7 @@ impl LFBTerminal {
         for r in 1..rows {
             Self::present_row(&mut display, model, r);
         }
-        Self::draw_status_bar(&mut display);
+        Self::draw_status_bar(&mut display, ime::get_layout().ok());
         display.lfb.flush();
 
         display.cursor_pos = (model.cursor.col, model.cursor.row);
@@ -112,7 +112,7 @@ impl LFBTerminal {
         if scrolled {
             // The scroll dragged content through the status row, and every
             // remaining line moved, so the whole surface has to go out.
-            Self::draw_status_bar(&mut display);
+            Self::draw_status_bar(&mut display, ime::get_layout().ok());
             display.lfb.flush();
         }
 
@@ -256,23 +256,30 @@ impl LFBTerminal {
         display.active_tab = active;
     }
 
-    pub fn draw_status_bar(display: &mut DisplayState) {
-        let total_cols = display.size.0 as u32;
+    pub fn draw_status_bar(display: &mut DisplayState, layout: Option<ime::Layout>) {
+        let framebuffer = display.lfb.lfb();
+        let width = framebuffer.width();
+        let height = framebuffer.height().min(lfb::DEFAULT_CHAR_HEIGHT);
+        framebuffer.fill_rect(0, 0, width, height, color::HHU_GREEN);
 
-        Self::draw_status_background(display, total_cols);
-        let used_cols = Self::draw_status_tabs(display, total_cols);
-        let date_start = Self::draw_status_date(display, total_cols, used_cols);
+        let total_cols = display.size.0 as u32;
+        let label = layout.map_or("KB --", ime::Layout::status_label);
+        let label = &label[label.len().saturating_sub(total_cols as usize)..];
+        let layout_start = total_cols - label.len() as u32;
+        framebuffer.draw_string(
+            layout_start * lfb::DEFAULT_CHAR_WIDTH,
+            0,
+            color::HHU_BLUE,
+            color::INVISIBLE,
+            label,
+        );
+
+        let available_cols = layout_start.saturating_sub(1);
+        let used_cols = Self::draw_status_tabs(display, available_cols);
+        let date_start = Self::draw_status_date(display, available_cols, used_cols);
         Self::draw_status_info(display, used_cols, date_start);
 
-        display.lfb.flush_lines(0, lfb::DEFAULT_CHAR_HEIGHT);
-    }
-
-    fn draw_status_background(display: &mut DisplayState, total_cols: u32) {
-        for i in 0..total_cols * lfb::DEFAULT_CHAR_WIDTH {
-            for j in 0..lfb::DEFAULT_CHAR_HEIGHT {
-                display.lfb.lfb().draw_pixel(i, j, color::HHU_GREEN);
-            }
-        }
+        display.lfb.flush_lines(0, height);
     }
 
     fn draw_status_tabs(display: &mut DisplayState, total_cols: u32) -> u32 {

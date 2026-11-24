@@ -25,7 +25,8 @@ use drawer::drawer::Drawer;
 use drawer::rect_data::RectData;
 use drawer::vertex::Vertex;
 use globals::hotkeys::HKEY_TOGGLE_TERMINAL_WINDOW;
-use graphic::lfb::DEFAULT_CHAR_HEIGHT;
+use graphic::color::{HHU_BLUE, HHU_GREEN};
+use graphic::lfb::{DEFAULT_CHAR_HEIGHT, DEFAULT_CHAR_WIDTH};
 use nolock::queues::mpsc::jiffy;
 
 use input::mouse::try_read_mouse;
@@ -52,6 +53,7 @@ mod windows;
 mod workspace;
 
 const WORKSPACE_SELECTION_WINDOW_HEIGHT: u32 = 30;
+const LAYOUT_BAR_HEIGHT: u32 = DEFAULT_CHAR_HEIGHT;
 
 // IDs are unique across all components
 static ID_COUNTER: AtomicUsize = AtomicUsize::new(1);
@@ -79,6 +81,7 @@ struct WindowManager {
     on_loop_iter_fns: Vec<NewLoopIterFnData>,
     /// Determines if a full redraw is required in the next loop-iteration
     is_dirty: bool,
+    layout_bar_label: Option<&'static str>,
     last_frame_time: TimeDelta,
     start_time: TimeDelta,
     frames: i64,
@@ -124,7 +127,7 @@ impl WindowManager {
 
         // Workspace selection window
         let workspace_selection_window = WorkspaceSelectionWindow::new(RectData {
-            top_left: Vertex::new(DIST_TO_SCREEN_EDGE, DIST_TO_SCREEN_EDGE),
+            top_left: Vertex::new(DIST_TO_SCREEN_EDGE, LAYOUT_BAR_HEIGHT + DIST_TO_SCREEN_EDGE),
             width: screen.0 - DIST_TO_SCREEN_EDGE * 2,
             height: WORKSPACE_SELECTION_WINDOW_HEIGHT,
         });
@@ -153,6 +156,7 @@ impl WindowManager {
                 command_line_window,
                 receivers,
                 is_dirty: true,
+                layout_bar_label: None,
                 on_loop_iter_fns: Vec::new(),
                 last_frame_time: time,
                 start_time: time,
@@ -469,11 +473,12 @@ impl WindowManager {
         let window_rect_data = RectData {
             top_left: Vertex::new(
                 DIST_TO_SCREEN_EDGE,
-                DIST_TO_SCREEN_EDGE + WORKSPACE_SELECTION_WINDOW_HEIGHT,
+                LAYOUT_BAR_HEIGHT + DIST_TO_SCREEN_EDGE + WORKSPACE_SELECTION_WINDOW_HEIGHT,
             ),
             width: screen_res.0 - DIST_TO_SCREEN_EDGE * 2,
-            height: screen_res.1
-                - (DIST_TO_SCREEN_EDGE * 2 + WORKSPACE_SELECTION_WINDOW_HEIGHT),
+            height: screen_res.1.saturating_sub(
+                LAYOUT_BAR_HEIGHT + DIST_TO_SCREEN_EDGE * 2 + WORKSPACE_SELECTION_WINDOW_HEIGHT,
+            ),
         };
 
         // Create a new window for the workspace
@@ -574,6 +579,7 @@ impl WindowManager {
 
         if is_dirty {
             Drawer::full_clear_screen(false);
+            self.layout_bar_label = None;
             self.workspace_selection_window.mark_dirty();
         }
 
@@ -629,10 +635,39 @@ impl WindowManager {
         elapsed >= FLUSHING_DELAY_MS
     }
 
+    fn draw_layout_bar(&mut self) {
+        let label = ime::get_layout().ok().map_or("KB --", ime::Layout::status_label);
+        if self.layout_bar_label == Some(label) {
+            return;
+        }
+        self.layout_bar_label = Some(label);
+        let (width, height) = Self::get_screen_res();
+        Drawer::draw_filled_rectangle(
+            RectData {
+                top_left: Vertex::new(0, 0),
+                width,
+                height: LAYOUT_BAR_HEIGHT.min(height),
+            },
+            HHU_GREEN,
+            None,
+        );
+
+        let cols = (width / DEFAULT_CHAR_WIDTH) as usize;
+        let label = &label[label.len().saturating_sub(cols)..];
+        Drawer::draw_string(
+            label.to_owned(),
+            Vertex::new((cols - label.len()) as u32 * DEFAULT_CHAR_WIDTH, 0),
+            HHU_BLUE,
+            None,
+            (1, 1),
+        );
+    }
+
     /// Flushes the changes from the backbuffer and displays them on the front buffer,
     /// if allowed by `should_flush()`.
     fn flush(&mut self) {
         if self.should_flush() {
+            self.draw_layout_bar();
             Drawer::flush();
             self.last_frame_time = systime();
             self.frames = self

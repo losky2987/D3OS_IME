@@ -25,6 +25,15 @@ impl Layout {
         }
     }
 
+    /// Short label for system status displays.
+    pub const fn status_label(self) -> &'static str {
+        match self {
+            Self::Deutsch => "KB DE",
+            Self::English => "KB EN",
+            Self::ChinesePinyin => "KB CN",
+        }
+    }
+
     pub const fn next(self) -> Self {
         match self {
             Self::Deutsch => Self::English,
