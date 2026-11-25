@@ -11,8 +11,10 @@ bench = false
 [features]
 default = ["userspace"]
 userspace = ["dep:syscall"]
+pinyin = ["userspace", "dep:concurrent"]
 
 [dependencies]
+concurrent = { path = "../concurrent", optional = true }
 # Local dependencies
 syscall = { path = "../syscall", optional = true }
 stream = { path = "../stream" }

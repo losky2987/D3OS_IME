@@ -2,7 +2,8 @@ use core::cell::RefCell;
 
 use alloc::rc::Rc;
 use globals::hotkeys::{HKEY_CLOSE_TAB, HKEY_NEW_TAB, HKEY_NEXT_TAB, HKEY_PREV_TAB, HKEY_TOGGLE_TERMINAL_WINDOW};
-use ime::{DecodedKey, KeyCode, KeyEvent, KeyboardInput};
+use ime::pinyin::{Delivery, PinyinClient};
+use ime::{DecodedKey, KeyCode, KeyEvent};
 use stream::event_to_u16;
 use terminal_lib::TerminalMode;
 use terminal_lib::session::{CtlRecord, WaitState};
@@ -18,16 +19,21 @@ use super::worker::Worker;
 pub struct InputObserver {
     event_handler: Rc<RefCell<EventHandler>>,
     mode: TerminalMode,
+    active: u8,
+    pinyin: Rc<RefCell<PinyinClient>>,
     /// Shared session multiplexer: owns per-session endpoints, canonical
     /// editors, and routes input to the active session's foreground app.
     mux: Rc<RefCell<SessionMux>>,
 }
 
 impl InputObserver {
-    pub fn new(event_handler: Rc<RefCell<EventHandler>>, mux: Rc<RefCell<SessionMux>>) -> Self {
+    pub fn new(event_handler: Rc<RefCell<EventHandler>>, mux: Rc<RefCell<SessionMux>>, pinyin: Rc<RefCell<PinyinClient>>) -> Self {
+        let active = mux.borrow().active_id();
         Self {
             event_handler,
             mode: TerminalMode::Raw,
+            active,
+            pinyin,
             mux,
         }
     }
@@ -51,54 +57,68 @@ impl Worker for InputObserver {
     fn run(&mut self) {
         self.mux.borrow_mut().ensure_active_in_writer();
 
-        let Ok(Some(KeyboardInput { raw: key_event, decoded })) = ime::read_event(false) else {
+        let active = self.mux.borrow().active_id();
+        if self.active != active {
+            self.active = active;
+            self.pinyin.borrow_mut().cancel();
+        }
+
+        let Ok(Some(input)) = ime::read_event(false) else {
             return;
         };
 
         let record = self.mux.borrow().active_ctl();
-        let use_pipe = record.is_some();
         let mode = self.resolve_mode(record);
-
         if let Some(mode) = mode {
             self.mode = mode;
         }
 
-        // Process key event into decoded key (unicode char or raw keycode)
-        let Some(decoded_key) = decoded else {
-            // This returns none if the key event was a key release
-            // In this case, we only process the byte if the terminal is in raw mode
-            if use_pipe && self.mode == TerminalMode::Raw {
-                self.deliver_raw(key_event);
-            }
-
-            return;
-        };
-
-        // Handle reserved keys (e.g. hotkeys)
-        let Some(decoded_key) = self.try_intercept_reserved_key(decoded_key) else {
-            return;
-        };
-
-        // Buffer the decoded key based on the terminal input mode. Canonical
-        // mode edits and echoes through the active session's own state.
-        match mode {
-            Some(TerminalMode::Canonical) => {
-                if let Some(action) = Self::canonical_action(decoded_key) {
-                    self.mux.borrow_mut().handle_canonical(action);
+        let decoded = match input.decoded {
+            Some(key) => match self.try_intercept_reserved_key(key) {
+                Some(key) => Some(key),
+                None => {
+                    self.pinyin.borrow_mut().suspend();
+                    return;
                 }
+            },
+            None => None,
+        };
+        let text_target = matches!(mode, Some(TerminalMode::Canonical | TerminalMode::Fluid));
+        let delivery = self.pinyin.borrow_mut().handle(&input, text_target);
+        if let Delivery::Commit(text) = delivery {
+            if text_target {
+                for character in text.chars() {
+                    self.deliver_decoded(mode, DecodedKey::Unicode(character));
+                }
+                return;
             }
-            Some(TerminalMode::Fluid) => {
-                self.deliver(&ime::wire::encode_key(decoded_key).to_ne_bytes());
+        }
+
+        if let Some(key) = decoded {
+            if mode == Some(TerminalMode::Raw) {
+                self.deliver_raw(input.raw);
+            } else {
+                self.deliver_decoded(mode, key);
             }
-            Some(TerminalMode::Raw) => {
-                self.deliver_raw(key_event);
-            }
-            None => {}
+        } else if record.is_some() && self.mode == TerminalMode::Raw {
+            self.deliver_raw(input.raw);
         }
     }
 }
 
 impl InputObserver {
+    fn deliver_decoded(&mut self, mode: Option<TerminalMode>, key: DecodedKey) {
+        match mode {
+            Some(TerminalMode::Canonical) => {
+                if let Some(action) = Self::canonical_action(key) {
+                    self.mux.borrow_mut().handle_canonical(action);
+                }
+            }
+            Some(TerminalMode::Fluid) => self.deliver(&ime::wire::encode_key(key).to_ne_bytes()),
+            _ => {}
+        }
+    }
+
     /// Check if the pressed key corresponds to a command.
     ///
     /// If this is the case, queue it. Else, this is just input for the applications.

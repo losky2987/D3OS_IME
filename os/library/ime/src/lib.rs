@@ -1,7 +1,12 @@
 #![no_std]
 //! Stateful keyboard layout decoding for D3OS input consumers.
 
+#[cfg(feature = "pinyin")]
+extern crate alloc;
+
 mod layout;
+#[cfg(feature = "pinyin")]
+pub mod pinyin;
 #[cfg(feature = "userspace")]
 mod userspace;
 #[doc(hidden)]

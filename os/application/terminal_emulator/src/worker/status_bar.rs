@@ -1,4 +1,6 @@
 use alloc::rc::Rc;
+use core::cell::RefCell;
+use ime::pinyin::PinyinClient;
 use time::systime;
 
 use super::worker::Worker;
@@ -9,15 +11,17 @@ const LAYOUT_POLL_INTERVAL: i64 = 50;
 
 pub struct StatusBar {
     terminal: Rc<LFBTerminal>,
+    pinyin: Rc<RefCell<PinyinClient>>,
     last_tick: i64,
     last_poll: i64,
     last_layout: Option<ime::Layout>,
 }
 
 impl StatusBar {
-    pub const fn new(terminal: Rc<LFBTerminal>) -> Self {
+    pub const fn new(terminal: Rc<LFBTerminal>, pinyin: Rc<RefCell<PinyinClient>>) -> Self {
         Self {
             terminal,
+            pinyin,
             last_tick: -UPDATE_INTERVAL,
             last_poll: -LAYOUT_POLL_INTERVAL,
             last_layout: None,
@@ -33,10 +37,16 @@ impl Worker for StatusBar {
         }
         self.last_poll = systime;
         let layout = ime::get_layout().ok();
-        if layout != self.last_layout || systime >= self.last_tick + UPDATE_INTERVAL {
+        let mut pinyin = self.pinyin.borrow_mut();
+        pinyin.sync_layout(layout);
+        let status = pinyin.status();
+        let mut display = self.terminal.display.lock();
+        if layout != self.last_layout || display.ime_status != status || systime >= self.last_tick + UPDATE_INTERVAL {
             self.last_tick = systime;
             self.last_layout = layout;
-            LFBTerminal::draw_status_bar(&mut self.terminal.display.lock(), layout);
+            display.ime_status.clear();
+            display.ime_status.push_str(status);
+            LFBTerminal::draw_status_bar(&mut display, layout);
         }
     }
 }

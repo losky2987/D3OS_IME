@@ -276,8 +276,27 @@ impl LFBTerminal {
 
         let available_cols = layout_start.saturating_sub(1);
         let used_cols = Self::draw_status_tabs(display, available_cols);
-        let date_start = Self::draw_status_date(display, available_cols, used_cols);
-        Self::draw_status_info(display, used_cols, date_start);
+        if layout == Some(ime::Layout::ChinesePinyin) && !display.ime_status.is_empty() {
+            let start = used_cols.saturating_add(1).min(available_cols);
+            let available = (available_cols - start) * lfb::DEFAULT_CHAR_WIDTH;
+            let text = lfb::fit_text(&display.ime_status, available);
+            let idle = display.ime_status.len() == 6;
+            display.lfb.lfb().draw_string(
+                start * lfb::DEFAULT_CHAR_WIDTH,
+                0,
+                color::HHU_BLUE,
+                color::INVISIBLE,
+                text,
+            );
+            if idle {
+                let used_cols = start + 6;
+                let date_start = Self::draw_status_date(display, available_cols, used_cols);
+                Self::draw_status_info(display, used_cols, date_start);
+            }
+        } else {
+            let date_start = Self::draw_status_date(display, available_cols, used_cols);
+            Self::draw_status_info(display, used_cols, date_start);
+        }
 
         display.lfb.flush_lines(0, height);
     }
